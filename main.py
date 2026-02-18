@@ -11,8 +11,9 @@ import json, os, socket, struct, sys, threading
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version('Gdk', '4.0')
-from gi.repository import Gdk, GLib, Gtk
+gi.require_version("Gdk", "4.0")
+gi.require_version("GUdev", "1.0")
+from gi.repository import Gdk, GLib, GUdev, Gtk
 
 CSS = "entry.busy { opacity: 0.5; }"
 
@@ -42,7 +43,7 @@ class Greeter(Gtk.Application):
         self.command = command
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.connect(os.environ["GREETD_SOCK"])
-        self._busy = False
+        self._busy = True  # in-flight until first auth prompt arrives
         self.connect("activate", self.on_activate)
 
     def request(self, msg, callback):
@@ -76,6 +77,9 @@ class Greeter(Gtk.Application):
         self.entry.set_visible(False)
         self.entry.connect("activate", self.on_submit)
         box.append(self.entry)
+
+        self.udev = GUdev.Client(subsystems=["usb"])
+        self.udev.connect("uevent", self.on_uevent)
 
         win = Gtk.ApplicationWindow(application=self)
         win.set_child(box)
@@ -115,13 +119,28 @@ class Greeter(Gtk.Application):
                     self.on_auth,
                 )
             case {"type": "error"}:
-                self.request(
-                    {"type": "cancel_session"},
-                    lambda _: self.request(
-                        {"type": "create_session", "username": self.username},
-                        self.on_auth,
-                    ),
-                )
+                self.restart_auth()
+
+    def restart_auth(self):
+        self.request(
+            {"type": "cancel_session"},
+            lambda _: self.request(
+                {"type": "create_session", "username": self.username},
+                self.on_auth,
+            ),
+        )
+
+    def on_uevent(self, _client, action, device):
+        if (
+            action == "add"
+            and device.get_property("DEVTYPE") == "usb_device"
+            and device.get_property("ID_VENDOR_ID") == "1050"
+            and not self._busy
+        ):
+            self._busy = True
+            self.entry.set_text("")
+            self.entry.set_visible(False)
+            self.restart_auth()
 
     def set_busy(self, busy):
         self._busy = busy
