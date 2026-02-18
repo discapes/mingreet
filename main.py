@@ -15,7 +15,15 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("GUdev", "1.0")
 from gi.repository import Gdk, GLib, GUdev, Gtk
 
-CSS = "entry.busy { opacity: 0.5; }"
+CSS = """
+entry { background: alpha(currentColor, 0.1); }
+entry.busy { opacity: 0.5; }
+window {
+    background-image: url("file:///etc/greetd/gentoocave.png");
+    background-size: cover;
+    background-position: center;
+}
+"""
 
 
 def send(sock, msg):
@@ -55,6 +63,7 @@ class Greeter(Gtk.Application):
         ).start()
 
     def on_activate(self, _app):
+        Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
         css = Gtk.CssProvider()
         css.load_from_string(CSS)
         Gtk.StyleContext.add_provider_for_display(
@@ -82,6 +91,7 @@ class Greeter(Gtk.Application):
         self.udev.connect("uevent", self.on_uevent)
 
         win = Gtk.ApplicationWindow(application=self)
+        win.set_cursor_from_name("none")
         win.set_child(box)
         win.fullscreen()
         win.present()
